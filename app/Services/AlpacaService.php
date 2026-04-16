@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DTOs\AccountStatus;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -29,6 +30,11 @@ class AlpacaService
     public function getAccount(): array
     {
         return $this->trading()->get('/v2/account')->throw()->json();
+    }
+
+    public function getAccountStatus(): AccountStatus
+    {
+        return AccountStatus::fromAlpaca($this->getAccount());
     }
 
     // -------------------------------------------------------------------------

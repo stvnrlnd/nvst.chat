@@ -11,28 +11,36 @@ use Livewire\Component;
 
 new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 {
-    public array $account = [];
-
     public bool $marketOpen = false;
 
     public function mount(AlpacaService $alpaca): void
     {
         try {
-            $this->account = $alpaca->getAccount();
             $this->marketOpen = (bool) ($alpaca->getClock()['is_open'] ?? false);
         } catch (\Throwable) {
-            $this->account = [];
+            //
         }
     }
 
-    public function with(): array
+    public function with(AlpacaService $alpaca): array
     {
+        $account = null;
+
+        try {
+            $account = $alpaca->getAccountStatus();
+        } catch (\Throwable) {
+            //
+        }
+
         return [
-            'portfolioValue' => $this->account['portfolio_value'] ?? null,
-            'buyingPower' => $this->account['buying_power'] ?? null,
-            'dayPl' => isset($this->account['equity'], $this->account['last_equity'])
-                ? (float) $this->account['equity'] - (float) $this->account['last_equity']
-                : null,
+            'portfolioValue' => $account?->portfolioValue,
+            'buyingPower' => $account?->buyingPower,
+            'daytradeCount' => $account?->daytradeCount ?? 0,
+            'remainingDayTrades' => $account?->remainingDayTrades() ?? 3,
+            'patternDayTrader' => $account?->patternDayTrader ?? false,
+            'isPdtRestricted' => $account?->isPdtRestricted() ?? false,
+            'isNearPdtLimit' => $account?->isNearPdtLimit() ?? false,
+            'dayPl' => $account?->dayPl(),
             'positionCount' => Position::count(),
             'watchlistCount' => Stock::active()->count(),
             'recentSignals' => Signal::orderByDesc('created_at')->limit(5)->get(),
@@ -77,7 +85,34 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
                 <flux:badge color="zinc" size="sm" icon="pause">Signals Only</flux:badge>
             @endif
         </flux:tooltip>
+
+        <flux:tooltip position="bottom" :content="'Day trades used in the last 5 business days. The PDT rule flags your account if you exceed 3 day trades (buy + same-day sell) in a rolling 5-day window. Flagged accounts under $25k equity are restricted to close-only orders.'">
+            @if($isPdtRestricted)
+                <flux:badge color="red" size="sm" icon="exclamation-triangle">PDT Restricted</flux:badge>
+            @elseif($daytradeCount >= 3)
+                <flux:badge color="red" size="sm">{{ $daytradeCount }}/3 Day Trades</flux:badge>
+            @elseif($isNearPdtLimit)
+                <flux:badge color="yellow" size="sm">{{ $daytradeCount }}/3 Day Trades</flux:badge>
+            @else
+                <flux:badge color="zinc" size="sm">{{ $daytradeCount }}/3 Day Trades</flux:badge>
+            @endif
+        </flux:tooltip>
     </div>
+
+    {{-- PDT Warning Banner --}}
+    @if($isPdtRestricted)
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            <strong>PDT Restriction Active.</strong> This account is flagged as a pattern day trader with equity below $25,000. All new orders are blocked until equity is restored above the threshold or the PDT flag is resolved with Alpaca.
+        </div>
+    @elseif($daytradeCount >= 3)
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            <strong>Day trade limit reached ({{ $daytradeCount }}/3).</strong> Same-day sells are blocked for the rest of this 5-business-day window to prevent PDT flagging. Positions can still be held and sold on a future day.
+        </div>
+    @elseif($isNearPdtLimit)
+        <div class="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300">
+            <strong>PDT warning: {{ $remainingDayTrades }} day trade{{ $remainingDayTrades === 1 ? '' : 's' }} remaining</strong> in the current 5-business-day window. The bot will block same-day sells once the limit is hit.
+        </div>
+    @endif
 
     {{-- Portfolio Stats --}}
     <div class="grid grid-cols-2 gap-4 md:grid-cols-4">

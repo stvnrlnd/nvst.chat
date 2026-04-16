@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DTOs\AccountStatus;
 use App\Enums\OrderType;
 use App\Enums\SignalAction;
 use App\Enums\TradeSide;
@@ -66,12 +67,20 @@ class TradingService
             return null;
         }
 
-        $account = $this->alpaca->getAccount();
-        $buyingPower = (float) ($account['buying_power'] ?? 0);
-        $portfolioValue = (float) ($account['portfolio_value'] ?? 0);
+        $account = $this->alpaca->getAccountStatus();
+        $buyingPower = $account->buyingPower;
+        $portfolioValue = $account->portfolioValue;
 
         if ($portfolioValue <= 0) {
             Log::warning('Portfolio value is zero — skipping trade execution.');
+
+            return null;
+        }
+
+        // PDT check 1: account is flagged and under the $25k equity threshold
+        if ($account->isPdtRestricted()) {
+            Log::warning("PDT restriction active — account flagged as pattern day trader with equity below \$25,000. Skipping {$signal->symbol}.");
+            $signal->update(['executed' => true]);
 
             return null;
         }
@@ -95,6 +104,22 @@ class TradingService
                 $signal->update(['executed' => true]);
 
                 return null;
+            }
+
+            // PDT check 2: would this sell create a day trade that exceeds the rolling limit?
+            if (Trade::wouldBeDayTrade($signal->symbol)) {
+                $rolling = Trade::rollingDayTradeCount();
+
+                if ($rolling >= 3) {
+                    Log::warning("PDT limit reached ({$rolling}/3 day trades in rolling 5-day window) — holding {$signal->symbol} sell to avoid flagging account.");
+                    $signal->update(['executed' => true]);
+
+                    return null;
+                }
+
+                if ($rolling >= 2) {
+                    Log::warning("PDT warning: executing this sell will use day trade {$rolling}/3 for {$signal->symbol}. One remaining after this.");
+                }
             }
 
             $qty = (float) $position->qty;
@@ -182,6 +207,11 @@ class TradingService
                     $updates['filled_avg_price'] = $order['filled_avg_price'] ?? null;
                     $updates['filled_qty'] = $order['filled_qty'] ?? null;
                     $updates['filled_at'] = now();
+
+                    // Mark as a day trade if this is a sell and we also bought today
+                    if ($trade->side === TradeSide::Sell && Trade::wouldBeDayTrade($trade->symbol)) {
+                        $updates['is_day_trade'] = true;
+                    }
                 }
 
                 $trade->update($updates);
