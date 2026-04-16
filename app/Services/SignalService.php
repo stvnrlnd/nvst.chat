@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Ai\Agents\TradingSignalAgent;
 use App\Enums\SignalAction;
 use App\Models\NewsArticle;
 use App\Models\Signal;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SignalService
@@ -17,6 +17,12 @@ class SignalService
      */
     public function generateSignal(string $symbol): Signal
     {
+        if (Signal::isOnCooldown($symbol)) {
+            Log::info("Signal cooldown active for {$symbol} — skipping cycle.");
+
+            return $this->saveSignal($symbol, SignalAction::Hold, null, 'Cooldown: recent non-Hold signal exists.');
+        }
+
         $strategy = config('alpaca.strategy', 'sma_crossover');
 
         $signal = match ($strategy) {
@@ -143,39 +149,19 @@ class SignalService
         $sentimentScore = NewsArticle::aggregateSentiment($symbol);
         $sentimentLabel = NewsArticle::sentimentLabel($sentimentScore);
         $sentimentContext = $sentimentScore !== null
-            ? "Recent news sentiment: {$sentimentLabel} (score: ".number_format($sentimentScore, 2).", range −1.0 to +1.0)."
+            ? "Recent news sentiment: {$sentimentLabel} (score: ".number_format($sentimentScore, 2).', range −1.0 to +1.0).'
             : 'Recent news sentiment: unavailable.';
 
+        $prompt = <<<PROMPT
+        Symbol: {$symbol}
+        Recent closing prices (oldest → newest): {$priceHistory}
+        Current price: {$currentPrice}
+        {$sentimentContext}
+        PROMPT;
+
         try {
-            $response = Http::withHeaders([
-                'x-api-key' => config('services.anthropic.key'),
-                'anthropic-version' => '2023-06-01',
-            ])->post('https://api.anthropic.com/v1/messages', [
-                'model' => 'claude-haiku-4-5-20251001',
-                'max_tokens' => 256,
-                'messages' => [
-                    [
-                        'role' => 'user',
-                        'content' => <<<PROMPT
-                        You are a trading signal engine. Analyze the recent closing prices for {$symbol} and respond with ONLY valid JSON.
-
-                        Recent closing prices (oldest to newest): {$priceHistory}
-                        Current price: {$currentPrice}
-                        {$sentimentContext}
-
-                        Respond with exactly this JSON structure:
-                        {"action": "buy|sell|hold", "confidence": 0.0-1.0, "reason": "brief one-sentence explanation"}
-                        PROMPT,
-                    ],
-                ],
-            ]);
-
-            $content = $response->throw()->json('content.0.text');
-            $data = json_decode($content, true);
-
-            if (! $data || ! isset($data['action'])) {
-                throw new \RuntimeException('Invalid JSON from Claude');
-            }
+            $response = TradingSignalAgent::make()->prompt($prompt);
+            $data = $response->structured();
 
             $action = SignalAction::from($data['action']);
             $confidence = (float) ($data['confidence'] ?? 0.5);

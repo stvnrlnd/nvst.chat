@@ -74,6 +74,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Signal Cooldown
+    |--------------------------------------------------------------------------
+    |
+    | Minimum minutes between non-Hold signals for the same symbol. Prevents
+    | the same Buy or Sell from firing on every 5-minute cycle during a
+    | sustained crossover. Set to 0 to disable.
+    |
+    */
+
+    'signal_cooldown_minutes' => env('ALPACA_SIGNAL_COOLDOWN_MINUTES', 30),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stop-Loss
+    |--------------------------------------------------------------------------
+    |
+    | Maximum unrealized loss (as a decimal fraction) before a position is
+    | force-sold regardless of the current signal. E.g. -0.05 = exit at -5%.
+    | Set to null to disable stop-loss entirely.
+    |
+    */
+
+    'stop_loss_pct' => env('ALPACA_STOP_LOSS_PCT', -0.05),
+
+    /*
+    |--------------------------------------------------------------------------
     | Macro Filter
     |--------------------------------------------------------------------------
     |

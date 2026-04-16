@@ -220,6 +220,8 @@ class AlpacaService
                 'APCA-API-KEY-ID' => $key,
                 'APCA-API-SECRET-KEY' => $secret,
             ])
+            ->connectTimeout(3)
+            ->timeout(8)
             ->acceptJson();
     }
 }

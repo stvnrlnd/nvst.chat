@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -21,7 +22,7 @@ class EarningsEvent extends Model
      * Check whether any earnings event for the symbol falls within the blackout window.
      *
      * @param  int  $daysBefore  Days before earnings to start blocking
-     * @param  int  $daysAfter   Days after earnings to keep blocking
+     * @param  int  $daysAfter  Days after earnings to keep blocking
      */
     public static function isInBlackout(string $symbol, int $daysBefore = 2, int $daysAfter = 1): bool
     {
@@ -37,7 +38,7 @@ class EarningsEvent extends Model
     /**
      * Return the nearest upcoming earnings date for a symbol, or null if none known.
      */
-    public static function nextEarningsDate(string $symbol): ?Carbon
+    public static function nextEarningsDate(string $symbol): ?CarbonInterface
     {
         $row = static::query()
             ->where('symbol', $symbol)

@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\DTOs\AccountStatus;
 use App\Enums\OrderType;
 use App\Enums\SignalAction;
 use App\Enums\TradeSide;
 use App\Enums\TradeStatus;
+use App\Jobs\ExecuteTradeJob;
 use App\Models\EarningsEvent;
 use App\Models\MarketCondition;
 use App\Models\Position;
@@ -206,6 +206,51 @@ class TradingService
 
             return null;
         }
+    }
+
+    /**
+     * Force-sell any positions that have breached the stop-loss threshold.
+     *
+     * Creates a SELL signal and dispatches ExecuteTradeJob for each breached position
+     * so the trade flows through the normal execution path (PDT checks, logging, etc).
+     *
+     * Returns the number of stop-loss triggers fired.
+     */
+    public function checkStopLosses(): int
+    {
+        $threshold = config('alpaca.stop_loss_pct');
+
+        if ($threshold === null) {
+            return 0;
+        }
+
+        $threshold = (float) $threshold;
+        $triggered = 0;
+
+        Position::all()->each(function (Position $position) use ($threshold, &$triggered): void {
+            $plpc = (float) $position->unrealized_plpc;
+
+            if ($plpc >= $threshold) {
+                return;
+            }
+
+            $pct = number_format($plpc * 100, 2);
+            Log::warning("Stop-loss triggered for {$position->symbol}: unrealized P&L {$pct}% (threshold: ".number_format($threshold * 100, 2).'%).');
+
+            $signal = Signal::create([
+                'symbol' => $position->symbol,
+                'action' => SignalAction::Sell,
+                'price_at_signal' => (float) $position->current_price,
+                'reason' => "Stop-loss: position at {$pct}% (threshold ".number_format($threshold * 100, 2).'%).',
+                'confidence' => 1.0,
+                'executed' => false,
+            ]);
+
+            ExecuteTradeJob::dispatch($signal);
+            $triggered++;
+        });
+
+        return $triggered;
     }
 
     /**

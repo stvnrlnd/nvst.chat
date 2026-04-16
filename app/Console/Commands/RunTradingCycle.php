@@ -35,6 +35,13 @@ class RunTradingCycle extends Command
         $trading->syncPortfolio();
         $trading->syncPendingOrders();
 
+        // Step 1b: Check stop-losses before generating new signals
+        $stopLosses = $trading->checkStopLosses();
+
+        if ($stopLosses > 0) {
+            $this->warn("  → Stop-loss triggered for {$stopLosses} position(s).");
+        }
+
         // Step 2: Generate signals for all active stocks
         $stocks = Stock::active()->get();
 

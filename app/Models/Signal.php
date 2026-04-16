@@ -35,4 +35,22 @@ class Signal extends Model
         $query->where('executed', false)
             ->where('action', '!=', SignalAction::Hold->value);
     }
+
+    /**
+     * Whether a non-Hold signal was already generated for this symbol within the cooldown window.
+     */
+    public static function isOnCooldown(string $symbol): bool
+    {
+        $minutes = (int) config('alpaca.signal_cooldown_minutes', 30);
+
+        if ($minutes <= 0) {
+            return false;
+        }
+
+        return static::query()
+            ->where('symbol', $symbol)
+            ->where('action', '!=', SignalAction::Hold->value)
+            ->where('created_at', '>=', now()->subMinutes($minutes))
+            ->exists();
+    }
 }
