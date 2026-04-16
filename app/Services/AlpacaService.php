@@ -143,7 +143,7 @@ class AlpacaService
     public function getTopMovers(int $top = 20): array
     {
         return $this->data()
-            ->get('/v1beta1/screener/stocks/movers', ['by' => 'percent', 'top' => $top])
+            ->get('/v1beta1/screener/stocks/movers', ['top' => $top])
             ->throw()
             ->json();
     }
@@ -159,7 +159,7 @@ class AlpacaService
     public function getMostActives(int $top = 20): array
     {
         return $this->data()
-            ->get('/v1beta1/screener/stocks/most-actives', ['by' => 'volume', 'top' => $top])
+            ->get('/v1beta1/screener/stocks/most-actives', ['top' => $top])
             ->throw()
             ->json();
     }
