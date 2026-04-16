@@ -7,6 +7,8 @@ use App\Enums\OrderType;
 use App\Enums\SignalAction;
 use App\Enums\TradeSide;
 use App\Enums\TradeStatus;
+use App\Models\EarningsEvent;
+use App\Models\MarketCondition;
 use App\Models\Position;
 use App\Models\Signal;
 use App\Models\Trade;
@@ -73,6 +75,25 @@ class TradingService
 
         if ($portfolioValue <= 0) {
             Log::warning('Portfolio value is zero — skipping trade execution.');
+
+            return null;
+        }
+
+        // Earnings blackout: skip trades within 2 days before / 1 day after earnings
+        if (EarningsEvent::isInBlackout($signal->symbol)) {
+            $next = EarningsEvent::nextEarningsDate($signal->symbol);
+            $dateLabel = $next ? $next->toDateString() : 'soon';
+            Log::info("Earnings blackout for {$signal->symbol} (report {$dateLabel}) — skipping signal #{$signal->id}.");
+            $signal->update(['executed' => true]);
+
+            return null;
+        }
+
+        // Macro filter: suppress BUY signals on bearish market days
+        if ($signal->action === SignalAction::Buy && MarketCondition::isTodayBearish()) {
+            $macro = config('alpaca.macro_symbol', 'SPY');
+            Log::info("Macro filter: {$macro} is down beyond threshold today — suppressing BUY for {$signal->symbol}.");
+            $signal->update(['executed' => true]);
 
             return null;
         }

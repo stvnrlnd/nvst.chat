@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\SignalAction;
+use App\Models\NewsArticle;
 use App\Models\Signal;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -18,10 +19,54 @@ class SignalService
     {
         $strategy = config('alpaca.strategy', 'sma_crossover');
 
-        return match ($strategy) {
+        $signal = match ($strategy) {
             'ai' => $this->generateAiSignal($symbol),
             default => $this->generateSmaCrossoverSignal($symbol),
         };
+
+        // When not using AI, apply the rule-based sentiment filter to BUY signals.
+        // The AI strategy already receives sentiment as context in its prompt.
+        if ($strategy !== 'ai' && $signal->action === SignalAction::Buy) {
+            $signal = $this->applySentimentFilter($signal);
+        }
+
+        return $signal;
+    }
+
+    /**
+     * Downgrade a BUY signal to HOLD if recent news sentiment is strongly negative.
+     *
+     * When AI is active, sentiment is passed as context to the prompt instead so
+     * the model can weigh it alongside other factors rather than a binary rule.
+     */
+    private function applySentimentFilter(Signal $signal): Signal
+    {
+        $threshold = config('alpaca.sentiment_threshold');
+
+        if ($threshold === null) {
+            return $signal;
+        }
+
+        $score = NewsArticle::aggregateSentiment($signal->symbol);
+
+        // No articles means no sentiment data — don't suppress
+        if ($score === null) {
+            return $signal;
+        }
+
+        if ($score <= (float) $threshold) {
+            $label = NewsArticle::sentimentLabel($score);
+            $reason = "Sentiment filter: BUY suppressed due to {$label} news sentiment (score: ".number_format($score, 2)."). Original signal: {$signal->reason}";
+
+            Log::info("Sentiment filter suppressed BUY for {$signal->symbol} (score: {$score}).");
+
+            // Mark the original signal executed and return a new HOLD
+            $signal->update(['executed' => true]);
+
+            return $this->saveSignal($signal->symbol, SignalAction::Hold, $signal->price_at_signal, $reason);
+        }
+
+        return $signal;
     }
 
     /**
@@ -94,6 +139,13 @@ class SignalService
         $currentPrice = end($prices);
         $priceHistory = implode(', ', array_map(fn ($p) => number_format($p, 2), array_slice($prices, -10)));
 
+        // Include sentiment context for the AI — gives it a richer signal than price alone
+        $sentimentScore = NewsArticle::aggregateSentiment($symbol);
+        $sentimentLabel = NewsArticle::sentimentLabel($sentimentScore);
+        $sentimentContext = $sentimentScore !== null
+            ? "Recent news sentiment: {$sentimentLabel} (score: ".number_format($sentimentScore, 2).", range −1.0 to +1.0)."
+            : 'Recent news sentiment: unavailable.';
+
         try {
             $response = Http::withHeaders([
                 'x-api-key' => config('services.anthropic.key'),
@@ -109,6 +161,7 @@ class SignalService
 
                         Recent closing prices (oldest to newest): {$priceHistory}
                         Current price: {$currentPrice}
+                        {$sentimentContext}
 
                         Respond with exactly this JSON structure:
                         {"action": "buy|sell|hold", "confidence": 0.0-1.0, "reason": "brief one-sentence explanation"}

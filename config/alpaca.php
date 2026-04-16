@@ -58,4 +58,31 @@ return [
     'strategy' => env('ALPACA_STRATEGY', 'sma_crossover'),
     'sma_short' => env('ALPACA_SMA_SHORT', 5),
     'sma_long' => env('ALPACA_SMA_LONG', 20),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sentiment Filter
+    |--------------------------------------------------------------------------
+    |
+    | sentiment_threshold — aggregate sentiment score (−1.0 to +1.0) below
+    | which a BUY signal is downgraded to HOLD. Set to null to disable.
+    | When the AI strategy is active it receives sentiment as context instead.
+    |
+    */
+
+    'sentiment_threshold' => env('ALPACA_SENTIMENT_THRESHOLD', -0.3),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Macro Filter
+    |--------------------------------------------------------------------------
+    |
+    | macro_symbol        — index/ETF to use as a market health proxy (default: SPY)
+    | macro_bear_threshold — % intraday drop that marks the session as bearish;
+    |                        BUY signals are suppressed when breached (e.g. -1.5 = down 1.5%)
+    |
+    */
+
+    'macro_symbol' => env('ALPACA_MACRO_SYMBOL', 'SPY'),
+    'macro_bear_threshold' => env('ALPACA_MACRO_BEAR_THRESHOLD', -1.5),
 ];

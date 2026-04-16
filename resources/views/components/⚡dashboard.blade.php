@@ -11,36 +11,72 @@ use Livewire\Component;
 
 new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 {
+    public bool $accountLoading = true;
+
+    public ?string $lastUpdatedAt = null;
+
     public bool $marketOpen = false;
 
-    public function mount(AlpacaService $alpaca): void
+    public ?float $portfolioValue = null;
+
+    public ?float $buyingPower = null;
+
+    public ?float $dayPl = null;
+
+    public int $daytradeCount = 0;
+
+    public int $remainingDayTrades = 3;
+
+    public bool $patternDayTrader = false;
+
+    public bool $isPdtRestricted = false;
+
+    public bool $isNearPdtLimit = false;
+
+    public bool $pollingPaused = false;
+
+    public function togglePolling(): void
+    {
+        $this->pollingPaused = ! $this->pollingPaused;
+    }
+
+    /** Called via wire:init — deferred so the page renders instantly from DB. */
+    public function loadAccountData(AlpacaService $alpaca): void
     {
         try {
-            $this->marketOpen = (bool) ($alpaca->getClock()['is_open'] ?? false);
+            $account = $alpaca->getAccountStatus();
+            $clock = $alpaca->getClock();
+
+            $this->marketOpen = (bool) ($clock['is_open'] ?? false);
+            $this->portfolioValue = $account->portfolioValue;
+            $this->buyingPower = $account->buyingPower;
+            $this->dayPl = $account->dayPl();
+            $this->daytradeCount = $account->daytradeCount;
+            $this->remainingDayTrades = $account->remainingDayTrades();
+            $this->patternDayTrader = $account->patternDayTrader;
+            $this->isPdtRestricted = $account->isPdtRestricted();
+            $this->isNearPdtLimit = $account->isNearPdtLimit();
         } catch (\Throwable) {
             //
+        } finally {
+            $this->accountLoading = false;
+            $this->lastUpdatedAt = now()->format('g:i:s A');
         }
     }
 
-    public function with(AlpacaService $alpaca): array
+    /** Called by wire:poll — re-fetches account data on interval unless paused. */
+    public function pollRefresh(AlpacaService $alpaca): void
     {
-        $account = null;
-
-        try {
-            $account = $alpaca->getAccountStatus();
-        } catch (\Throwable) {
-            //
+        if ($this->pollingPaused) {
+            return;
         }
 
+        $this->loadAccountData($alpaca);
+    }
+
+    public function with(): array
+    {
         return [
-            'portfolioValue' => $account?->portfolioValue,
-            'buyingPower' => $account?->buyingPower,
-            'daytradeCount' => $account?->daytradeCount ?? 0,
-            'remainingDayTrades' => $account?->remainingDayTrades() ?? 3,
-            'patternDayTrader' => $account?->patternDayTrader ?? false,
-            'isPdtRestricted' => $account?->isPdtRestricted() ?? false,
-            'isNearPdtLimit' => $account?->isNearPdtLimit() ?? false,
-            'dayPl' => $account?->dayPl(),
             'positionCount' => Position::count(),
             'watchlistCount' => Stock::active()->count(),
             'recentSignals' => Signal::orderByDesc('created_at')->limit(5)->get(),
@@ -52,12 +88,44 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 };
 ?>
 
-<div class="flex flex-col gap-6 p-4">
+<div
+    class="flex flex-col gap-6 p-4"
+    wire:init="loadAccountData"
+    wire:poll.30s="pollRefresh"
+    x-data
+    x-init="
+        const saved = JSON.parse(localStorage.getItem('dashboardPollingPaused') ?? 'false');
+        if (saved) $wire.pollingPaused = true;
+    "
+>
 
     {{-- Page heading --}}
     <div class="flex items-center justify-between">
         <flux:heading size="xl">Dashboard</flux:heading>
-        <flux:button size="xs" variant="ghost" icon="question-mark-circle" x-on:click="window.startTour('dashboard')">Take Tour</flux:button>
+        <div class="flex items-center gap-3">
+            @if($lastUpdatedAt)
+                <flux:text size="xs" class="text-neutral-400">Updated {{ $lastUpdatedAt }}</flux:text>
+            @endif
+            <flux:tooltip content="Auto-refresh every 30 seconds. Click to pause/resume.">
+                <flux:button
+                    size="xs"
+                    variant="ghost"
+                    icon="pause"
+                    wire:click="togglePolling"
+                    x-on:click="localStorage.setItem('dashboardPollingPaused', JSON.stringify(true))"
+                    x-show="!$wire.pollingPaused"
+                >Live</flux:button>
+                <flux:button
+                    size="xs"
+                    variant="ghost"
+                    icon="play"
+                    wire:click="togglePolling"
+                    x-on:click="localStorage.setItem('dashboardPollingPaused', JSON.stringify(false))"
+                    x-show="$wire.pollingPaused"
+                >Paused</flux:button>
+            </flux:tooltip>
+            <flux:button size="xs" variant="ghost" icon="question-mark-circle" x-on:click="window.startTour('dashboard')">Take Tour</flux:button>
+        </div>
     </div>
 
     {{-- Status Bar --}}
@@ -71,7 +139,9 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         </flux:tooltip>
 
         <flux:tooltip position="bottom" content="The NYSE and NASDAQ are open Mon–Fri, 9:30am–4:00pm ET. The bot only runs during these hours.">
-            @if($marketOpen)
+            @if($accountLoading)
+                <flux:badge color="zinc" size="sm">Market —</flux:badge>
+            @elseif($marketOpen)
                 <flux:badge color="green" size="sm" icon="signal">Market Open</flux:badge>
             @else
                 <flux:badge color="zinc" size="sm">Market Closed</flux:badge>
@@ -87,7 +157,9 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         </flux:tooltip>
 
         <flux:tooltip position="bottom" :content="'Day trades used in the last 5 business days. The PDT rule flags your account if you exceed 3 day trades (buy + same-day sell) in a rolling 5-day window. Flagged accounts under $25k equity are restricted to close-only orders.'">
-            @if($isPdtRestricted)
+            @if($accountLoading)
+                <flux:badge color="zinc" size="sm">— Day Trades</flux:badge>
+            @elseif($isPdtRestricted)
                 <flux:badge color="red" size="sm" icon="exclamation-triangle">PDT Restricted</flux:badge>
             @elseif($daytradeCount >= 3)
                 <flux:badge color="red" size="sm">{{ $daytradeCount }}/3 Day Trades</flux:badge>
@@ -100,15 +172,15 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
     </div>
 
     {{-- PDT Warning Banner --}}
-    @if($isPdtRestricted)
+    @if(!$accountLoading && $isPdtRestricted)
         <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
             <strong>PDT Restriction Active.</strong> This account is flagged as a pattern day trader with equity below $25,000. All new orders are blocked until equity is restored above the threshold or the PDT flag is resolved with Alpaca.
         </div>
-    @elseif($daytradeCount >= 3)
+    @elseif(!$accountLoading && $daytradeCount >= 3)
         <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
             <strong>Day trade limit reached ({{ $daytradeCount }}/3).</strong> Same-day sells are blocked for the rest of this 5-business-day window to prevent PDT flagging. Positions can still be held and sold on a future day.
         </div>
-    @elseif($isNearPdtLimit)
+    @elseif(!$accountLoading && $isNearPdtLimit)
         <div class="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300">
             <strong>PDT warning: {{ $remainingDayTrades }} day trade{{ $remainingDayTrades === 1 ? '' : 's' }} remaining</strong> in the current 5-business-day window. The bot will block same-day sells once the limit is hit.
         </div>
@@ -123,9 +195,13 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
                     <flux:icon.question-mark-circle class="size-3 cursor-help text-neutral-400" />
                 </flux:tooltip>
             </div>
-            <p class="mt-1 text-2xl font-semibold">
-                {{ $portfolioValue ? '$'.number_format($portfolioValue, 2) : '—' }}
-            </p>
+            @if($accountLoading)
+                <div class="mt-2 h-8 w-32 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+            @else
+                <p class="mt-1 text-2xl font-semibold">
+                    {{ $portfolioValue ? '$'.number_format($portfolioValue, 2) : '—' }}
+                </p>
+            @endif
         </div>
 
         <div id="tour-buying-power" class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
@@ -135,9 +211,13 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
                     <flux:icon.question-mark-circle class="size-3 cursor-help text-neutral-400" />
                 </flux:tooltip>
             </div>
-            <p class="mt-1 text-2xl font-semibold">
-                {{ $buyingPower ? '$'.number_format($buyingPower, 2) : '—' }}
-            </p>
+            @if($accountLoading)
+                <div class="mt-2 h-8 w-32 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+            @else
+                <p class="mt-1 text-2xl font-semibold">
+                    {{ $buyingPower ? '$'.number_format($buyingPower, 2) : '—' }}
+                </p>
+            @endif
         </div>
 
         <div id="tour-day-pl" class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
@@ -147,13 +227,17 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
                     <flux:icon.question-mark-circle class="size-3 cursor-help text-neutral-400" />
                 </flux:tooltip>
             </div>
-            <p class="mt-1 text-2xl font-semibold {{ $dayPl !== null && $dayPl >= 0 ? 'text-green-600' : 'text-red-600' }}">
-                @if($dayPl !== null)
-                    {{ $dayPl >= 0 ? '+' : '' }}${{ number_format($dayPl, 2) }}
-                @else
-                    —
-                @endif
-            </p>
+            @if($accountLoading)
+                <div class="mt-2 h-8 w-24 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+            @else
+                <p class="mt-1 text-2xl font-semibold {{ $dayPl !== null && $dayPl >= 0 ? 'text-green-600' : 'text-red-600' }}">
+                    @if($dayPl !== null)
+                        {{ $dayPl >= 0 ? '+' : '' }}${{ number_format($dayPl, 2) }}
+                    @else
+                        —
+                    @endif
+                </p>
+            @endif
         </div>
 
         <div id="tour-counts" class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">

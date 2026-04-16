@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EarningsEvent;
 use App\Models\Stock;
 use App\Services\AlpacaService;
 use Livewire\Attributes\Layout;
@@ -9,6 +10,8 @@ use Livewire\Component;
 new #[Layout('layouts.app')] #[Title('Discover')] class extends Component
 {
     public string $tab = 'gainers';
+
+    public bool $dataLoading = true;
 
     /** @var array<int, array<string, mixed>> */
     public array $gainers = [];
@@ -21,13 +24,15 @@ new #[Layout('layouts.app')] #[Title('Discover')] class extends Component
 
     public ?string $error = null;
 
-    public function mount(AlpacaService $alpaca): void
+    /** Called via wire:init — deferred so the page renders without waiting on Alpaca. */
+    public function loadMarketData(AlpacaService $alpaca): void
     {
         $this->loadData($alpaca);
     }
 
     public function refresh(AlpacaService $alpaca): void
     {
+        $this->dataLoading = true;
         $this->error = null;
         $this->loadData($alpaca);
     }
@@ -43,6 +48,8 @@ new #[Layout('layouts.app')] #[Title('Discover')] class extends Component
             $this->actives = $actives['most_actives'] ?? [];
         } catch (\Throwable $e) {
             $this->error = 'Could not load market data: '.$e->getMessage();
+        } finally {
+            $this->dataLoading = false;
         }
     }
 
@@ -58,14 +65,27 @@ new #[Layout('layouts.app')] #[Title('Discover')] class extends Component
 
     public function with(): array
     {
+        $watchlistSymbols = Stock::pluck('symbol')->map(fn ($s) => strtoupper($s))->all();
+
+        // Only show blackout status for symbols we have earnings data for
+        $blackoutSymbols = EarningsEvent::query()
+            ->whereIn('symbol', $watchlistSymbols)
+            ->get()
+            ->filter(fn ($e) => EarningsEvent::isInBlackout($e->symbol))
+            ->pluck('symbol')
+            ->unique()
+            ->values()
+            ->all();
+
         return [
-            'watchlistSymbols' => Stock::pluck('symbol')->map(fn ($s) => strtoupper($s))->all(),
+            'watchlistSymbols' => $watchlistSymbols,
+            'blackoutSymbols' => $blackoutSymbols,
         ];
     }
 };
 ?>
 
-<div class="flex flex-col gap-6 p-4">
+<div class="flex flex-col gap-6 p-4" wire:init="loadMarketData">
 
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -143,25 +163,44 @@ new #[Layout('layouts.app')] #[Title('Discover')] class extends Component
         </button>
     </div>
 
+    {{-- Loading skeleton --}}
+    @if($dataLoading)
+        <div class="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700">
+            <div class="space-y-3 p-4">
+                @foreach(range(1, 8) as $i)
+                    <div class="flex items-center gap-4">
+                        <div class="h-4 w-16 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+                        <div class="h-4 w-20 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+                        <div class="h-4 w-16 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+                        <div class="h-4 w-16 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+                        <div class="ml-auto h-6 w-14 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700"></div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @else
+
     {{-- Tab panels --}}
     @if($tab === 'gainers')
         @if(empty($gainers))
             <x-discover-empty-state />
         @else
-            <x-discover-table :rows="$gainers" :watchlist-symbols="$watchlistSymbols" />
+            <x-discover-table :rows="$gainers" :watchlist-symbols="$watchlistSymbols" :blackout-symbols="$blackoutSymbols" />
         @endif
     @elseif($tab === 'losers')
         @if(empty($losers))
             <x-discover-empty-state />
         @else
-            <x-discover-table :rows="$losers" :watchlist-symbols="$watchlistSymbols" />
+            <x-discover-table :rows="$losers" :watchlist-symbols="$watchlistSymbols" :blackout-symbols="$blackoutSymbols" />
         @endif
     @else
         @if(empty($actives))
             <x-discover-empty-state />
         @else
-            <x-discover-table :rows="$actives" :watchlist-symbols="$watchlistSymbols" />
+            <x-discover-table :rows="$actives" :watchlist-symbols="$watchlistSymbols" :blackout-symbols="$blackoutSymbols" />
         @endif
     @endif
+
+    @endif {{-- end $dataLoading --}}
 
 </div>

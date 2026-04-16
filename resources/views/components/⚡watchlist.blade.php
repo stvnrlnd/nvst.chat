@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\EarningsEvent;
+use App\Models\NewsArticle;
 use App\Models\Stock;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -48,8 +50,37 @@ new #[Layout('layouts.app')] #[Title('Watchlist')] class extends Component
 
     public function with(): array
     {
+        $stocks = Stock::orderBy('symbol')->get();
+
+        // Build a map of symbol => next earnings date + blackout status
+        $earningsMap = EarningsEvent::query()
+            ->whereIn('symbol', $stocks->pluck('symbol'))
+            ->whereDate('report_date', '>=', now()->subDay())
+            ->orderBy('report_date')
+            ->get()
+            ->groupBy('symbol')
+            ->map(fn ($events) => $events->first());
+
+        // Build sentiment map: symbol => ['score' => float|null, 'label' => string, 'articles' => collection]
+        $sentimentMap = [];
+
+        foreach ($stocks->pluck('symbol') as $sym) {
+            $score = NewsArticle::aggregateSentiment($sym, 5);
+            $sentimentMap[$sym] = [
+                'score' => $score,
+                'label' => NewsArticle::sentimentLabel($score),
+                'articles' => NewsArticle::query()
+                    ->where('symbol', $sym)
+                    ->orderByDesc('published_at')
+                    ->limit(3)
+                    ->get(),
+            ];
+        }
+
         return [
-            'stocks' => Stock::orderBy('symbol')->get(),
+            'stocks' => $stocks,
+            'earningsMap' => $earningsMap,
+            'sentimentMap' => $sentimentMap,
         ];
     }
 };
@@ -111,10 +142,31 @@ new #[Layout('layouts.app')] #[Title('Watchlist')] class extends Component
                             <span class="cursor-help">Status</span>
                         </flux:tooltip>
                     </flux:table.column>
+                    <flux:table.column>
+                        <flux:tooltip content="Next known earnings report date. Trades are blocked 2 days before and 1 day after to avoid earnings volatility.">
+                            <span class="cursor-help">Earnings</span>
+                        </flux:tooltip>
+                    </flux:table.column>
+                    <flux:table.column>
+                        <flux:tooltip content="Aggregate sentiment from the last 5 news articles via Polygon. Strongly negative sentiment suppresses BUY signals.">
+                            <span class="cursor-help">Sentiment</span>
+                        </flux:tooltip>
+                    </flux:table.column>
                     <flux:table.column></flux:table.column>
                 </flux:table.columns>
                 <flux:table.rows>
                     @foreach($stocks as $stock)
+                        @php
+                            $earningsEvent = $earningsMap[$stock->symbol] ?? null;
+                            $inBlackout = $earningsEvent && \App\Models\EarningsEvent::isInBlackout($stock->symbol);
+                            $sentiment = $sentimentMap[$stock->symbol] ?? ['score' => null, 'label' => 'unknown', 'articles' => collect()];
+                            $sentimentColor = match($sentiment['label']) {
+                                'positive' => 'green',
+                                'negative' => 'red',
+                                'neutral'  => 'zinc',
+                                default    => 'zinc',
+                            };
+                        @endphp
                         <flux:table.row :key="$stock->id">
                             <flux:table.cell class="font-mono font-semibold">{{ $stock->symbol }}</flux:table.cell>
                             <flux:table.cell>{{ $stock->name ?? '—' }}</flux:table.cell>
@@ -123,6 +175,35 @@ new #[Layout('layouts.app')] #[Title('Watchlist')] class extends Component
                                 <flux:badge :color="$stock->is_active ? 'green' : 'zinc'" size="sm">
                                     {{ $stock->is_active ? 'Active' : 'Paused' }}
                                 </flux:badge>
+                            </flux:table.cell>
+                            <flux:table.cell>
+                                @if($inBlackout)
+                                    <flux:tooltip :content="'Earnings on '.$earningsEvent->report_date->toFormattedDateString().'. Trades are blocked around this date to avoid volatility.'">
+                                        <flux:badge color="yellow" size="sm" icon="exclamation-triangle">
+                                            Blackout {{ $earningsEvent->report_date->toFormattedDateString() }}
+                                        </flux:badge>
+                                    </flux:tooltip>
+                                @elseif($earningsEvent)
+                                    <flux:text size="sm" class="text-neutral-500">{{ $earningsEvent->report_date->toFormattedDateString() }}</flux:text>
+                                @else
+                                    <flux:text size="sm" class="text-neutral-400">—</flux:text>
+                                @endif
+                            </flux:table.cell>
+                            <flux:table.cell>
+                                @if($sentiment['score'] !== null)
+                                    @php
+                                        $articleTitles = $sentiment['articles']->map(fn($a) => '• '.$a->title)->implode("\n");
+                                        $tooltipText = $articleTitles ?: 'No recent articles.';
+                                    @endphp
+                                    <flux:tooltip :content="$tooltipText" position="left">
+                                        <flux:badge :color="$sentimentColor" size="sm" class="cursor-help">
+                                            {{ ucfirst($sentiment['label']) }}
+                                            ({{ number_format($sentiment['score'], 2) }})
+                                        </flux:badge>
+                                    </flux:tooltip>
+                                @else
+                                    <flux:text size="sm" class="text-neutral-400">—</flux:text>
+                                @endif
                             </flux:table.cell>
                             <flux:table.cell>
                                 <div class="flex gap-2">
