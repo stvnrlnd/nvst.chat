@@ -111,4 +111,57 @@ return [
 
     'macro_symbol' => env('ALPACA_MACRO_SYMBOL', 'SPY'),
     'macro_bear_threshold' => env('ALPACA_MACRO_BEAR_THRESHOLD', -1.5),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Screener Settings
+    |--------------------------------------------------------------------------
+    |
+    | Used by the nightly screener to score and rank watchlist symbols.
+    |
+    | screener_min_price  — ignore symbols trading below this price (penny stocks)
+    | screener_min_atr_pct — minimum ATR as % of price; below this = won't move enough
+    | screener_max_atr_pct — maximum ATR as % of price; above this = too volatile
+    | screener_top_n      — how many top candidates to keep per screener run
+    |
+    */
+
+    'screener_min_price' => env('ALPACA_SCREENER_MIN_PRICE', 5.0),
+    'screener_min_atr_pct' => env('ALPACA_SCREENER_MIN_ATR_PCT', 1.0),
+    'screener_max_atr_pct' => env('ALPACA_SCREENER_MAX_ATR_PCT', 8.0),
+    'screener_top_n' => env('ALPACA_SCREENER_TOP_N', 5),
+
+    /*
+    | Universe mode — when enabled, the screener fetches the top N most-active
+    | symbols from Alpaca and merges them with the watchlist before scoring.
+    | This removes the need to manually curate the watchlist for the screener.
+    |
+    | screener_use_universe  — set true to enable broad universe scanning
+    | screener_universe_size — how many most-actives to pull from Alpaca
+    */
+
+    'screener_use_universe' => env('ALPACA_SCREENER_USE_UNIVERSE', false),
+    'screener_universe_size' => env('ALPACA_SCREENER_UNIVERSE_SIZE', 50),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Automated Watchlist
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, SyncAutoWatchlistJob runs after market close each day,
+    | pulling the most-active and top-gaining symbols from Alpaca and upserting
+    | them into the stocks table with source='auto'. These symbols participate
+    | in the nightly screener and ORB strategy alongside manually added symbols.
+    |
+    | auto_watchlist_enabled   — master toggle for the auto-discovery job
+    | auto_watchlist_size      — how many symbols to pull from each Alpaca feed
+    |                            (most-actives + top gainers, deduplicated)
+    | auto_watchlist_stale_days — auto symbols not seen within this many days
+    |                             are deactivated (manual symbols are never touched)
+    |
+    */
+
+    'auto_watchlist_enabled' => env('ALPACA_AUTO_WATCHLIST_ENABLED', true),
+    'auto_watchlist_size' => env('ALPACA_AUTO_WATCHLIST_SIZE', 50),
+    'auto_watchlist_stale_days' => env('ALPACA_AUTO_WATCHLIST_STALE_DAYS', 7),
 ];

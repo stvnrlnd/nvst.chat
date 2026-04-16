@@ -44,7 +44,26 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Generate synthetic OHLCV bars for testing screener and signal logic.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function makeBars(int $count, float $startPrice, float $dailyIncrease, float $dailyRange): array
 {
-    // ..
+    $bars = [];
+    $price = $startPrice;
+
+    for ($i = 0; $i < $count; $i++) {
+        $open = $price;
+        $close = $price + $dailyIncrease;
+        $high = $close + ($dailyRange / 2);
+        $low = $open - ($dailyRange / 2);
+
+        $bars[] = ['o' => $open, 'h' => $high, 'l' => $low, 'c' => $close, 'v' => 1_000_000, 't' => '2026-01-01'];
+
+        $price = $close;
+    }
+
+    return $bars;
 }

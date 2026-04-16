@@ -170,6 +170,35 @@ class AlpacaService
             ->json();
     }
 
+    /**
+     * Fetch daily OHLCV bars for multiple symbols in a single API call.
+     *
+     * Returns an array keyed by symbol: ['AAPL' => [...bars], 'MSFT' => [...bars]]
+     * Bars are sorted oldest-first within each symbol.
+     *
+     * @param  string[]  $symbols
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function getBarsBulk(array $symbols, int $limit = 30, string $timeframe = '1Day'): array
+    {
+        if (empty($symbols)) {
+            return [];
+        }
+
+        $response = $this->data()
+            ->get('/v2/stocks/bars', [
+                'symbols' => implode(',', $symbols),
+                'timeframe' => $timeframe,
+                'limit' => $limit,
+                'adjustment' => 'split',
+                'sort' => 'asc',
+            ])
+            ->throw()
+            ->json();
+
+        return $response['bars'] ?? [];
+    }
+
     // -------------------------------------------------------------------------
     // Market Clock
     // -------------------------------------------------------------------------

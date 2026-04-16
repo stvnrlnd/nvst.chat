@@ -85,4 +85,36 @@ class MarketDataService
 
         return array_sum($slice) / $period;
     }
+
+    /**
+     * Calculate Average True Range from OHLCV bars (most recent last).
+     *
+     * True range = max(high−low, |high−prevClose|, |low−prevClose|)
+     * ATR = simple average of the last $period true ranges.
+     *
+     * @param  array<int, array<string, mixed>>  $bars  Each bar must have 'h', 'l', 'c' keys.
+     */
+    public function atr(array $bars, int $period = 14): ?float
+    {
+        if (count($bars) < $period + 1) {
+            return null;
+        }
+
+        $bars = array_slice($bars, -($period + 1));
+        $trueRanges = [];
+
+        for ($i = 1; $i < count($bars); $i++) {
+            $high = (float) $bars[$i]['h'];
+            $low = (float) $bars[$i]['l'];
+            $prevClose = (float) $bars[$i - 1]['c'];
+
+            $trueRanges[] = max(
+                $high - $low,
+                abs($high - $prevClose),
+                abs($low - $prevClose),
+            );
+        }
+
+        return array_sum($trueRanges) / count($trueRanges);
+    }
 }

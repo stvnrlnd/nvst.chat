@@ -1,5 +1,9 @@
 <?php
 
+use App\Console\Commands\RunScreener;
+use App\Jobs\OrbEntryJob;
+use App\Jobs\OrbExitJob;
+use App\Jobs\SyncAutoWatchlistJob;
 use App\Jobs\SyncEarningsCalendarJob;
 use App\Jobs\SyncMarketConditionJob;
 use App\Jobs\SyncNewsSentimentJob;
@@ -48,6 +52,35 @@ Schedule::job(new SyncNewsSentimentJob)
 // Refresh earnings calendar for watchlist symbols once daily at 7am ET (pre-market)
 Schedule::job(new SyncEarningsCalendarJob)
     ->dailyAt('7:00')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->withoutOverlapping();
+
+// Sync automated watchlist right after market close while data is freshest
+// Runs before the screener so newly discovered symbols are included tonight
+Schedule::job(new SyncAutoWatchlistJob)
+    ->dailyAt('16:30')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->withoutOverlapping();
+
+// Score and rank watchlist symbols each evening after market close
+Schedule::command('screener:run')
+    ->dailyAt('20:00')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->withoutOverlapping();
+
+// ORB entry: enter the top screener candidate one minute after open
+Schedule::job(new OrbEntryJob)
+    ->dailyAt('9:31')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->withoutOverlapping();
+
+// ORB exit: unconditionally close the ORB position 20 minutes after open
+Schedule::job(new OrbExitJob)
+    ->dailyAt('9:50')
     ->weekdays()
     ->timezone('America/New_York')
     ->withoutOverlapping();
