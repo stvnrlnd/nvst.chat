@@ -13,7 +13,7 @@ class SyncNewsSentimentJob implements ShouldQueue
 {
     use Queueable;
 
-    public ?string $queue = 'sync';
+    public $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 60;
