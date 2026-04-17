@@ -10,6 +10,8 @@ class GenerateSignalJob implements ShouldQueue
 {
     use Queueable;
 
+    public string $queue = 'trading';
+
     public int $tries = 3;
 
     public int $backoff = 60;

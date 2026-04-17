@@ -11,6 +11,8 @@ class ExecuteTradeJob implements ShouldQueue
 {
     use Queueable;
 
+    public string $queue = 'trading';
+
     public int $tries = 2;
 
     public int $backoff = 30;

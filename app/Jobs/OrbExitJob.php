@@ -16,6 +16,8 @@ class OrbExitJob implements ShouldQueue
 {
     use Queueable;
 
+    public string $queue = 'trading';
+
     /**
      * Exit today's ORB position at the 20-minute mark.
      *
