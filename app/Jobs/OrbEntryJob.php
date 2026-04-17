@@ -18,7 +18,7 @@ class OrbEntryJob implements ShouldQueue
 {
     use Queueable;
 
-    public string $queue = 'trading';
+    public ?string $queue = 'trading';
 
     /**
      * Enter the day's ORB position.

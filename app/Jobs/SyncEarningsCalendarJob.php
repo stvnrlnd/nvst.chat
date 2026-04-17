@@ -13,7 +13,7 @@ class SyncEarningsCalendarJob implements ShouldQueue
 {
     use Queueable;
 
-    public string $queue = 'sync';
+    public ?string $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 60;
