@@ -16,7 +16,10 @@ class OrbExitJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'trading';
+    public function __construct()
+    {
+        $this->onQueue('trading');
+    }
 
     /**
      * Exit today's ORB position at the 20-minute mark.

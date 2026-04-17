@@ -12,7 +12,11 @@ class SyncAutoWatchlistJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'sync';
+    public function __construct()
+    {
+        $this->onQueue('sync');
+    }
+
     /**
      * Sync the automated watchlist from Alpaca's most-actives and top gainers.
      *

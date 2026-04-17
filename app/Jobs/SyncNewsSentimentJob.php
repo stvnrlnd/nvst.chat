@@ -13,10 +13,14 @@ class SyncNewsSentimentJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 60;
+
+    public function __construct()
+    {
+        $this->onQueue('sync');
+    }
 
     /**
      * Fetch and persist recent news + sentiment for all active watchlist symbols.

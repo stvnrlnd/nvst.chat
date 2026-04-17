@@ -12,10 +12,14 @@ class SyncMarketConditionJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 30;
+
+    public function __construct()
+    {
+        $this->onQueue('sync');
+    }
 
     /**
      * Fetch today's intraday bar for the macro index (default: SPY) and record

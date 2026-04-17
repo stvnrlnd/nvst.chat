@@ -13,10 +13,14 @@ class SyncEarningsCalendarJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 60;
+
+    public function __construct()
+    {
+        $this->onQueue('sync');
+    }
 
     /**
      * Sync earnings dates for all active watchlist symbols from Polygon.

@@ -11,13 +11,14 @@ class ExecuteTradeJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'trading';
-
     public int $tries = 2;
 
     public int $backoff = 30;
 
-    public function __construct(public readonly Signal $signal) {}
+    public function __construct(public readonly Signal $signal)
+    {
+        $this->onQueue('trading');
+    }
 
     public function handle(TradingService $trading): void
     {

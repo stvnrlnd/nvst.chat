@@ -10,13 +10,14 @@ class GenerateSignalJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'trading';
-
     public int $tries = 3;
 
     public int $backoff = 60;
 
-    public function __construct(public readonly string $symbol) {}
+    public function __construct(public readonly string $symbol)
+    {
+        $this->onQueue('trading');
+    }
 
     public function handle(SignalService $signals): void
     {

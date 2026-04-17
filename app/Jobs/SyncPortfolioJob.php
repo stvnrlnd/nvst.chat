@@ -10,10 +10,14 @@ class SyncPortfolioJob implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'sync';
     public int $tries = 3;
 
     public int $backoff = 30;
+
+    public function __construct()
+    {
+        $this->onQueue('sync');
+    }
 
     public function handle(TradingService $trading): void
     {
